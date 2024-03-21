@@ -31,23 +31,33 @@ class SqlDB:
         self.cursor.execute("SELECT * FROM globalwishlist WHERE userid = %s", (userid,))
         res = self.cursor.fetchall()
         return res
+        
     def select_wish(self, gwid ):
         self.cursor.execute("SELECT wish, description  FROM globalwishlist WHERE gwid = %s", (gwid,))
         res = self.cursor.fetchall()
         return res
+        
     def delete_wish(self, gwid ):
         self.cursor.execute("DELETE FROM globalwishlist WHERE gwid = %s", (gwid,))
         return self.connection.commit()
+        
     def edit_wish(self, gwid, select, item):
         self.cursor.execute(f"UPDATE globalwishlist SET {select} = %s WHERE gwid = %s", (item, gwid,))
         return self.connection.commit()
+        
     def add_new_wish(self, userid, wish, description):
         self.cursor.execute("INSERT INTO globalwishlist (userid, wish, description)  VALUES (%s, %s, %s)", (userid, wish, description,))
         return self.connection.commit()
 
+    def add_new_local_wish(self, playerid, gwid):
+        self.cursor.execute("INSERT INTO localwishlist (playerid, gwid)  VALUES (%s, %s)",
+                            (playerid, gwid,))
+        return self.connection.commit()
+
     # добавление игрока
-    def add_new_player(self, playerid, userid, roomid, name, wishlist, address, pair):
-        self.cursor.execute("INSERT INTO player VALUES (%s, %s, %s, %s, %s, %s, %s)", (playerid, userid, roomid, name, wishlist, address, pair,))
+    def add_new_player(self, playerid, userid, roomid, name, address):
+        self.cursor.execute("INSERT INTO player (playerid, userid, roomid, name, address) VALUES (%s, %s, %s, %s, %s)",
+                            (playerid, userid, roomid, name, address,))
         return self.connection.commit()
 
     # данные об игроке
@@ -62,6 +72,16 @@ class SqlDB:
         res = self.cursor.fetchone()[0]
         return res > 0
 
+    def exists_player_room(self, userid, roomid):
+        self.cursor.execute("SELECT COUNT(*) FROM player WHERE userid = %s AND roomid = %s", (userid, roomid,))
+        res = self.cursor.fetchone()[0]
+        return res > 0
+
+    def player_number(self, roomid):
+        self.cursor.execute("SELECT COUNT(*) FROM player WHERE roomid = %s", (roomid,))
+        res = self.cursor.fetchone()[0]
+        return res
+        
     # создание комнаты
     def create_new_room(self, roomid, name, anonymity, budget, sending, meeting, organizer):
         self.cursor.execute("INSERT INTO room VALUES (%s, %s, %s, %s, %s, %s, %s)", (roomid, name, anonymity, budget, sending, meeting, organizer,))
@@ -99,7 +119,7 @@ class SqlDB:
 
     # комнаты для игрока и организатора
     def get_user_rooms(self, userid):
-        self.cursor.execute("SELECT room.name, room.organizer FROM room INNER JOIN player ON room.roomid = player.roomid WHERE player.userid = %s", (userid,))
+        self.cursor.execute("SELECT room.roomid, room.name, room.organizer, player.playerid FROM room INNER JOIN player ON room.roomid = player.roomid WHERE player.userid = %s", (userid,))
         res = self.cursor.fetchall()
         return res
 
