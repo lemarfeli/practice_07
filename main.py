@@ -59,7 +59,11 @@ def handle_message(message):
         bot.send_message(message.chat.id, 'Вы нажали на кнопку Войти в комнату')
 
     elif message.text == 'Мои комнаты':
-        bot.send_message(message.chat.id, 'Вы нажали на кнопку Мои комнаты')
+        rooms = SqlDB.get_user_rooms(message.from_user.id)
+        if rooms:
+            bot.send_message(message.chat.id, 'Вы состоите в следующих комнатах:', reply_markup=create_rooms_buttons(rooms))
+        else:
+            bot.send_message(message.chat.id, 'Вы не состоите ни в одной комнате. Можете создать свою комнату самостоятельно или войти в уже существующую с помощью кнопки "Войти в комнату". ')
 
     elif message.text == 'Виш лист':
         wish[message.chat.id] = {}
@@ -125,8 +129,9 @@ def room_anonymity(message):
         rub = types.KeyboardButton('₽')
         eur = types.KeyboardButton('€')
         usd = types.KeyboardButton('$')
+        kzt = types.KeyboardButton('₸')
 
-        markup_currency.row(rub, eur, usd)
+        markup_currency.row(rub, eur, usd, kzt)
 
         bot.send_message(message.chat.id, 'Укажите валюту, в которой будет определен бюджет для подарков',
                          reply_markup=markup_currency)
@@ -303,6 +308,81 @@ def description_update(message):
     SqlDB.edit_wish(id[message.chat.id]["id"], "description", message.text)
     bot.send_message(message.chat.id, 'Отлично! Изменения внесены ')
     bot.send_message(message.chat.id, "Ваш виш лист:", reply_markup=create_buttons(message.from_user.id))
+
+def create_rooms_buttons(rooms):
+    keyboard = types.InlineKeyboardMarkup()
+    for room in rooms:
+        room_id = room[0]
+        room_name = room[1]
+        if len(room) > 2 and room[2] == userid:
+            # кнопка для организатора
+            organizer_button_text = f"{room_name} (Организатор)"
+            organizer_callback_data = f"room_info_{room_id}_organizer"
+            keyboard.add(types.InlineKeyboardButton(text=organizer_button_text, callback_data=organizer_callback_data))
+        # кнопка для участника
+        participant_button_text = f"{room_name} (Участник)"
+        participant_callback_data = f"room_info_{room_id}_participant"
+        keyboard.add(types.InlineKeyboardButton(text=participant_button_text, callback_data=participant_callback_data))
+        
+    return keyboard
+    
+@bot.message_handler(commands=['help'])
+def help(message):
+    help_text = "Нужна помощь?\n" \
+                "По всем вопросам: @alekatya"
+    
+    bot.send_message(message.chat.id, help_text)
+
+@bot.message_handler(commands=['rules'])
+def rules(message):
+    rules_text = "Правила игры в Тайного Санту!🎅🏻\n" \
+                 "  1. Участники игры заполняют свой виш-лист\n" \
+                 "  2. Организатор игры нажимает кнопку Жеребьевка\n" \
+                 "  3. Каждый из игроков становится тайным Сантой. Игроку высылается виш-лист его подопечного\n" \
+                 "  4. Тайный Санта выбирает, покупает и запоковывает желаемый подарок из виш-листа подопечного\n" \
+                 "  5. В завимисоти от договоренности, высылаете по адресу или встречаетесь в назначенное время\n" \
+                 "  6. Дарите подготовленный подарок\n" \
+                 "  7. Получаете свой подарок от вашего тайного Санты\n\n" \
+                 "Хорошей игры!✨"
+    
+    bot.send_message(message.chat.id, rules_text)
+
+current_image_index = 0  # текущий индекс изображения
+
+def show_image(message, image_index):
+    # путь
+    image_path = f".../{image_index}.jpg"  
+    
+    with open(image_path, 'rb') as photo:
+        bot.send_photo(message.chat.id, photo)
+    
+    # кнопки назад-вперед
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.row(
+        types.InlineKeyboardButton(text="◀️", callback_data="prev"),
+        types.InlineKeyboardButton(text="▶️", callback_data="next")
+    )
+    
+    bot.send_message(message.chat.id, reply_markup=keyboard)
+
+@bot.message_handler(commands=['advice'])
+def advice(message):
+    global current_image_index
+    show_image(message, current_image_index)
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    global current_image_index
+    
+    if call.data == 'next':
+        current_image_index += 1
+    elif call.data == 'prev':
+        current_image_index -= 1
+    
+    # ограничить количество !!! там где 9 - наше количество скринов
+    current_image_index = max(0, min(current_image_index, 9))
+    
+    show_image(call.message, current_image_index)
 
 bot.infinity_polling()
 

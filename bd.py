@@ -97,6 +97,12 @@ class SqlDB:
         res = self.cursor.fetchall()
         return res
 
+    # комнаты для игрока и организатора
+    def get_user_rooms(self, userid):
+        self.cursor.execute("SELECT room.name, room.organizer FROM room INNER JOIN player ON room.roomid = player.roomid WHERE player.userid = %s", (userid,))
+        res = self.cursor.fetchall()
+        return res
+
     # прекратить соединение с бд
     def quiet(self):
         self.connection.close()
