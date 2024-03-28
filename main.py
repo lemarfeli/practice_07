@@ -160,35 +160,19 @@ def room_reg_name(message):
         room_key = ''.join(random.choices(string.ascii_letters + string.digits, k=char))
         room_registration[message.chat.id]['roomid'] = room_key  # ключ
         room_registration[message.chat.id]['name'] = message.text
+        if len(message.text) <= 64:
+            room_registration[message.chat.id]['name'] = message.text
+            bot.send_message(message.chat.id, 'Укажите валюту, в которой будет определен бюджет для подарков',
+                             reply_markup=currency_markup())
+            bot.register_next_step_handler(message, currency_budget)
+        else:
+            bot.send_message(message.chat.id, 'Название слишком длинное, попробуйте снова')
+            bot.register_next_step_handler(message, room_reg_name)
 
         global markup_anonymity
 
         markup_anonymity = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        anonym = types.KeyboardButton('Анонимная')
-        public = types.KeyboardButton('Публичная')
-        markup_anonymity.row(anonym, public)
-
-        bot.send_message(message.chat.id, 'Отлично! Анонимная или публичная игра? ', reply_markup=markup_anonymity)
-        bot.register_next_step_handler(message, room_anonymity)
-
-
-def room_anonymity(message):
-    global markup_anonymity
-    if message.text == 'Анонимная' or message.text == 'Публичная':
-        if message.text == 'Анонимная':
-            room_registration[message.chat.id]['anonymity'] = True
-        elif message.text == 'Публичная':
-            room_registration[message.chat.id]['anonymity'] = False
-        global markup_currency
-
-        markup_currency = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        rub = types.KeyboardButton('₽')
-        eur = types.KeyboardButton('€')
-        usd = types.KeyboardButton('$')
-        kzt = types.KeyboardButton('₸')
-
-        markup_currency.row(rub, eur, usd, kzt)
-
+        
         bot.send_message(message.chat.id, 'Укажите валюту, в которой будет определен бюджет для подарков',
                          reply_markup=markup_currency)
         bot.register_next_step_handler(message, currency_budget)
@@ -279,7 +263,7 @@ def room_sending(message):
 def room_meeting(message):    
     room_registration[message.chat.id]['meeting'] = message.text
     SqlDB.create_new_room(room_registration[message.chat.id]['roomid'], room_registration[message.chat.id]['name'],
-                          room_registration[message.chat.id]['anonymity'], room_registration[message.chat.id]['budget'],
+                          room_registration[message.chat.id]['budget'],
                           room_registration[message.chat.id]['sending'], room_registration[message.chat.id]['meeting'],
                           message.from_user.id)
     bot.send_message(message.chat.id, f'Ваши данные успешно сохранены!',
@@ -307,33 +291,61 @@ def enter_room(message):
 
 
 def player_name(message):
-    player[message.chat.id]['name'] = message.text
-    room_info = SqlDB.room_info(player[message.chat.id]['roomid'])
-    if room_info[0][4]:
-        bot.send_message(message.chat.id, 'Введите адрес для отправки')
-        bot.register_next_step_handler(message, player_address)
-    else:
-        player[message.chat.id]['address'] = None
-        SqlDB.add_new_player(player[message.chat.id]['playerid'], message.from_user.id,
-                             player[message.chat.id]['roomid'], player[message.chat.id]['name'],
-                             player[message.chat.id]['address'])
-        if not SqlDB.check_wish(message.from_user.id):
-            delete_markup = telebot.types.ReplyKeyboardRemove()
-            wish[message.chat.id]['check'] = "local"
-            bot.send_message(message.chat.id,
-                             'Добавьте подарок в ваш виш лист', parse_mode='html',
-                             reply_markup=delete_markup)
-            bot.register_next_step_handler(message, wishlist)
+    if len(message.text) <= 64:
+        player[message.chat.id]['name'] = message.text
+        room_info = SqlDB.room_info(player[message.chat.id]['roomid'])
+        if room_info[0][3]:
+            player[message.chat.id]['post'] = True
+            bot.send_message(message.chat.id, 'Введите адрес для отправки')
+            bot.register_next_step_handler(message, player_address)
         else:
-            bot.send_message(message.chat.id, 'Теперь необходимо выбрать подарок',
-                             reply_markup=create_buttons(message.chat.id, "local:"))
+            bot.send_message(message.chat.id, 'Хотите получить подарок лично или почтой?', parse_mode='html',
+                             reply_markup=sending_markup())
+            bot.register_next_step_handler(message, player_sending)
+    else:
+        bot.send_message(message.chat.id, 'Имя слишком длинное, попробуйте снова')
+        bot.register_next_step_handler(message, player_name)
 
+def player_sending(message):
+    if message.text == 'Назад':
+        bot.send_message(message.chat.id, 'Введите свое имя',
+                         reply_markup=telebot.types.ReplyKeyboardRemove())
+        bot.register_next_step_handler(message, player_name)
+    else:
+        if message.text == 'Почтой':
+            player[message.chat.id]['post'] = True
+            bot.send_message(message.chat.id, 'Введите адрес для отправки', reply_markup=back_markup())
+            bot.register_next_step_handler(message, player_address)
+        elif message.text == 'Лично':
+            player[message.chat.id]['post'] = False
+            player[message.chat.id]['address'] = None
+            SqlDB.add_new_player(player[message.chat.id]['playerid'], message.from_user.id,
+                                 player[message.chat.id]['roomid'], player[message.chat.id]['name'],
+                                 player[message.chat.id]['post'], player[message.chat.id]['address'])
+            if not SqlDB.check_wish(message.from_user.id):
+                wish[message.chat.id]['check'] = "local"
+                bot.send_message(message.chat.id,
+                                 'Добавьте подарок в ваш виш лист', parse_mode='html',
+                                 reply_markup=telebot.types.ReplyKeyboardRemove())
+                bot.register_next_step_handler(message, wishlist)
+            else:
+                bot.send_message(message.chat.id, 'Данные были сохранены', parse_mode='html',
+                                 reply_markup=telebot.types.ReplyKeyboardRemove())
+                bot.send_message(message.chat.id, 'Теперь необходимо выбрать подарок',
+                                 reply_markup=create_buttons(message.chat.id, "local:"))
+        else:
+            bot.send_message(message.chat.id, 'Я вас не понимаю')
+            bot.send_message(message.chat.id,
+                             'Выбор отправки почтой или вручение лично?',
+                             parse_mode='html',
+                             reply_markup=sending_markup())
+            bot.register_next_step_handler(message, player_sending)
 
 def player_address(message):
     player[message.chat.id]['address'] = message.text
     SqlDB.add_new_player(player[message.chat.id]['playerid'], message.from_user.id,
                          player[message.chat.id]['roomid'], player[message.chat.id]['name'],
-                         player[message.chat.id]['address'])
+                         player[message.chat.id]['post'], player[message.chat.id]['address']), 
     if not SqlDB.check_wish(message.from_user.id):
         delete_markup = telebot.types.ReplyKeyboardRemove()
         wish[message.chat.id]['check'] = "local"
