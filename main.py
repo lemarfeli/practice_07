@@ -6,8 +6,7 @@ from telebot import types
 from bd import SqlDB
 
 SqlDB = SqlDB()
-# '7070533359:AAGUwBLIkXmrdD9ebAIm4WRb8QUHhFiIfvo'
-bot = telebot.TeleBot('6813501562:AAF3-i5zM2LgbO_mpdy4yRYW4mr8Z0wtKic')
+bot = telebot.TeleBot('7070533359:AAGUwBLIkXmrdD9ebAIm4WRb8QUHhFiIfvo')
 
 room_registration = {}
 room_inf = {}
@@ -16,7 +15,7 @@ player_inf = {}
 wish = {}
 wish_inf = {}
 
-budget = {}
+val = {}
 
 
 @bot.message_handler(commands=['start'])
@@ -27,11 +26,13 @@ def start_command(message):
     wish_inf[message.chat.id] = {}
     player[message.chat.id] = {}
     player_inf[message.chat.id] = {}
+    val[message.chat.id] = {}
+    val[message.chat.id]['current_image_index'] = 0  # текущий индекс изображения для обучения
 
     if not SqlDB.exists_user(message.from_user.id):
         SqlDB.add_new_user(message.from_user.id)
     bot.send_message(message.chat.id, text_mess['first_mess'].format(message.from_user.first_name), parse_mode='html', reply_markup=main_markup())
-
+    advice(message)
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
@@ -43,20 +44,17 @@ def rules_command(message):
     bot.send_message(message.chat.id, text_mess['rules_text'])
 
 
-current_image_index = 1  # текущий индекс изображения
-
-
-def show_image(message, image_index):
-    # путь
-    image_path = f"C:/Users/margo/PycharmProjects/SantaBot/photo/{image_index}.jpg"
+def show_image(message):
     # кнопки назад-вперед
     keyboard = types.InlineKeyboardMarkup()
     keyboard.row(
         types.InlineKeyboardButton(text="◀️", callback_data="prev"),
         types.InlineKeyboardButton(text="▶️", callback_data="next")
-    )
-    with open(image_path, 'rb') as photo:
-        bot.edit_message_media(media=types.InputMediaPhoto(photo, caption='Текст к фото'), chat_id=message.chat.id,
+    ).add(types.InlineKeyboardButton(text="Завершить", callback_data="exit_advice"))
+    # путь
+    val[message.chat.id]['image_path'] = f"./photo/{val[message.chat.id]['current_image_index']}.jpg"
+    with open(val[message.chat.id]['image_path'], 'rb') as photo:
+        bot.edit_message_media(media=types.InputMediaPhoto(photo, caption=text_mess[f"advice_text_{val[message.chat.id]['current_image_index']}"], parse_mode='html'), chat_id=message.chat.id,
                                message_id=message.message_id, reply_markup=keyboard)
 
 
@@ -68,44 +66,49 @@ def advice(message):
     keyboard.row(
         types.InlineKeyboardButton(text="◀️", callback_data="prev"),
         types.InlineKeyboardButton(text="▶️", callback_data="next")
-    )
-    bot.send_photo(message.chat.id, open("C:/Users/margo/PycharmProjects/SantaBot/photo/0.jpg", 'rb'), caption='Текст к фото',  reply_markup=keyboard)
+    ).add(types.InlineKeyboardButton(text="Завершить", callback_data="exit_advice"))
+    bot.send_photo(message.chat.id, open("./photo/0.jpg", 'rb'), caption=text_mess[f"advice_text_{val[message.chat.id]['current_image_index']}"], parse_mode='html', reply_markup=keyboard)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "exit_advice")
+def callback_handler_exit_advice(call):
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+    bot.send_message(call.message.chat.id, text_mess['advice_text_done'], reply_markup=main_markup())
+    bot.answer_callback_query(call.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "next" or call.data == "prev")
-def callback_handler(call):
-    global current_image_index
-
+def callback_handler_next(call):
     if call.data == 'next':
-        current_image_index += 1
-        if current_image_index > 3:
-            current_image_index = 0
+        val[call.message.chat.id]['current_image_index'] += 1
+        if val[call.message.chat.id]['current_image_index'] > 5:
+            val[call.message.chat.id]['current_image_index'] = 0
     elif call.data == 'prev':
-        current_image_index -= 1
-        if current_image_index < 0:
-            current_image_index = 3
+        val[call.message.chat.id]['current_image_index'] -= 1
+        if val[call.message.chat.id]['current_image_index'] < 0:
+            val[call.message.chat.id]['current_image_index'] = 5
 
     # ограничить количество !!! там где 9 - наше количество скринов
-    current_image_index = max(0, min(current_image_index, 3))
+    val[call.message.chat.id]['current_image_index'] = max(0, min(val[call.message.chat.id]['current_image_index'], 5))
+    show_image(call.message)
+    bot.answer_callback_query(call.id)
 
-    show_image(call.message, current_image_index)
 
-
-@bot.message_handler(func=lambda message: message.text == 'Создать комнату')
+@bot.message_handler(func=lambda message: message.text == 'Создать комнату🏠')
 def handle_message_create_room(message):
     bot.send_message(message.chat.id,
                      text_mess['create_room_name'], parse_mode='html', reply_markup=room_name_markup())
     bot.register_next_step_handler(message, room_reg_name)
 
 
-@bot.message_handler(func=lambda message: message.text == 'Войти в новую комнату')
+@bot.message_handler(func=lambda message: message.text == 'Войти в новую комнату🔑')
 def handle_message_enter_room(message):
     bot.send_message(message.chat.id,
                      text_mess['enter_new_room'], parse_mode='html', reply_markup=back_markup())
     bot.register_next_step_handler(message, enter_room)
 
 
-@bot.message_handler(func=lambda message: message.text == 'Мои комнаты')
+@bot.message_handler(func=lambda message: message.text == 'Мои комнаты🏘️')
 def handle_message_my_room(message):
     if SqlDB.get_user_rooms(message.from_user.id) or SqlDB.get_org_rooms(message.from_user.id):
         bot.send_message(message.chat.id, text_mess['user_room'],
@@ -114,7 +117,7 @@ def handle_message_my_room(message):
         bot.send_message(message.chat.id, text_mess['user_room_error'])
 
 
-@bot.message_handler(func=lambda message: message.text == 'Виш лист')
+@bot.message_handler(func=lambda message: message.text == 'Виш лист🎁')
 def handle_message_wishlist(message):
     if not SqlDB.check_wish(message.from_user.id):
         wish[message.chat.id]['check'] = "global"
@@ -125,7 +128,7 @@ def handle_message_wishlist(message):
 
 
 @bot.message_handler(
-    func=lambda message: message.text not in ('Создать комнату', 'Войти в новую комнату', 'Мои комнаты', 'Виш лист'))
+    func=lambda message: message.text not in ('Создать комнату🏠', 'Войти в новую комнату🔑', 'Мои комнаты🏘️', 'Виш лист🎁'))
 def handle_message_ignor(message):
     # Действия при получении другого сообщения
     bot.send_message(message.chat.id, text_mess['dont_understand'], reply_markup=main_markup())
@@ -151,7 +154,7 @@ def create_players_buttons(roomid):
     keyboard = types.InlineKeyboardMarkup()
     for player_room in player_data:
         keyboard.add(types.InlineKeyboardButton(text=player_room[1], callback_data='player:' + str(player_room[0])))
-    keyboard.add(types.InlineKeyboardButton(text='Назад', callback_data=f'organizer:{roomid}'))
+    keyboard.add(types.InlineKeyboardButton(text='Назад↩️', callback_data=f'organizer:{roomid}'))
 
     return keyboard
 
@@ -182,7 +185,7 @@ def create_rooms_buttons(userid):
 
 def back_markup():
     markup_back = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    back_button = types.KeyboardButton('Назад')
+    back_button = types.KeyboardButton('Назад↩️')
     markup_back.add(back_button)
 
     return markup_back
@@ -190,10 +193,10 @@ def back_markup():
 
 def main_markup():
     markup_main = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    b_create_room = types.KeyboardButton('Создать комнату')
-    b_enter_room = types.KeyboardButton('Войти в новую комнату')
-    b_my_rooms = types.KeyboardButton('Мои комнаты')
-    b_wishlist = types.KeyboardButton('Виш лист')
+    b_create_room = types.KeyboardButton('Создать комнату🏠')
+    b_enter_room = types.KeyboardButton('Войти в новую комнату🔑')
+    b_my_rooms = types.KeyboardButton('Мои комнаты🏘️')
+    b_wishlist = types.KeyboardButton('Виш лист🎁')
     markup_main.add(b_create_room).add(b_enter_room).add(b_my_rooms).add(b_wishlist)
 
     return markup_main
@@ -205,7 +208,7 @@ def room_name_markup():
     name_2 = types.KeyboardButton('Друзья🤩')
     name_3 = types.KeyboardButton('Коллеги📚')
     name_4 = types.KeyboardButton('Одногруппники😎')
-    back = types.KeyboardButton('Назад')
+    back = types.KeyboardButton('Назад↩️')
     markup_room_name.row(name_1, name_2).row(name_3, name_4).add(back)
 
     return markup_room_name
@@ -217,7 +220,7 @@ def currency_markup():
     eur = types.KeyboardButton('€')
     usd = types.KeyboardButton('$')
     kzt = types.KeyboardButton('₸')
-    back = types.KeyboardButton('Назад')
+    back = types.KeyboardButton('Назад↩️')
     markup_currency.row(rub, eur, usd, kzt).add(back)
 
     return markup_currency
@@ -229,7 +232,7 @@ def budget_markup():
     budget_500 = types.KeyboardButton('500')
     budget_1000 = types.KeyboardButton('1000')
     budget_1500 = types.KeyboardButton('1500')
-    back = types.KeyboardButton('Назад')
+    back = types.KeyboardButton('Назад↩️')
     markup_budget.row(budget_300, budget_500).row(budget_1000, budget_1500).add(back)
 
     return markup_budget
@@ -237,16 +240,16 @@ def budget_markup():
 
 def sending_markup():
     markup_sending = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
-    post = types.KeyboardButton('Почтой')
-    ofline = types.KeyboardButton('Лично')
-    back = types.KeyboardButton('Назад')
+    post = types.KeyboardButton('Отправка почтой📦')
+    ofline = types.KeyboardButton('Встреча лично🙋‍♂️')
+    back = types.KeyboardButton('Назад↩️')
     markup_sending.add(post, ofline).add(back)
 
     return markup_sending
 
 
 def room_reg_name(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text_mess['back_to_manu'], reply_markup=main_markup())
     else:
         char = 6  # количество символов в ключе
@@ -263,7 +266,7 @@ def room_reg_name(message):
 
 
 def currency_budget(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text_mess['create_room_name'],
                          parse_mode='html', reply_markup=room_name_markup())
         bot.register_next_step_handler(message, room_reg_name)
@@ -274,7 +277,7 @@ def currency_budget(message):
 
 
 def room_budget(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text_mess['create_room_cur'],
                          reply_markup=currency_markup())
         bot.register_next_step_handler(message, currency_budget)
@@ -296,11 +299,11 @@ def room_budget(message):
 
 
 def room_sending(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text_mess['create_room_budget'], reply_markup=budget_markup())
         bot.register_next_step_handler(message, room_budget)
     else:
-        if message.text == 'Почтой':
+        if message.text == 'Отправка почтой📦':
             room_registration[message.chat.id]['sending'] = True
             SqlDB.create_new_room(room_registration[message.chat.id]['roomid'],
                                   room_registration[message.chat.id]['name'],
@@ -311,7 +314,7 @@ def room_sending(message):
             bot.send_message(message.chat.id,
                              text_mess['create_room_done'].format(room_registration[message.chat.id]['roomid']),
                              parse_mode='html', reply_markup=main_markup())
-        elif message.text == 'Лично':
+        elif message.text == 'Встреча лично🙋‍♂️':
             room_registration[message.chat.id]['sending'] = False
             bot.send_message(message.chat.id, text_mess['create_room_meeting'], parse_mode='html',
                              reply_markup=back_markup())
@@ -324,7 +327,7 @@ def room_sending(message):
 
 
 def room_meeting(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text_mess['create_room_sending'], parse_mode='html', reply_markup=sending_markup())
         bot.register_next_step_handler(message, room_sending)
     else:
@@ -341,33 +344,43 @@ def room_meeting(message):
 
 
 def enter_room(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text_mess['back_to_manu'], reply_markup=main_markup())
     else:
         if not SqlDB.exists_room(message.text):
             bot.send_message(message.chat.id, text_mess['enter_room_doesnt_exists'])
             bot.register_next_step_handler(message, enter_room)
         else:
-            if not SqlDB.exists_player_room(message.chat.id, message.text):
-                roomid = message.text
-                player[message.chat.id]['roomid'] = roomid
-                if SqlDB.player_number(roomid) < 9:
-                    num = '0' + str(SqlDB.player_number(roomid) + 1)
+            if not SqlDB.exists_player_room(message.chat.id, message.text) and not SqlDB.pair(message.text) and SqlDB.player_number(message.text) < 99:
+                player[message.chat.id]['roomid'] = message.text
+                room_inf[message.chat.id] = SqlDB.room_info(player[message.chat.id]['roomid'])[0]
+                room_registration[message.chat.id]["name"] = room_inf[message.chat.id][1]
+                room_registration[message.chat.id]["budget"] = room_inf[message.chat.id][2]
+                room_registration[message.chat.id]["sending"] = room_inf[message.chat.id][3]
+                if SqlDB.player_number(player[message.chat.id]['roomid']) < 9:
+                    num = '0' + str(SqlDB.player_number(player[message.chat.id]['roomid']) + 1)
                 else:
-                    num = str(SqlDB.player_number(roomid) + 1)
-                player[message.chat.id]['playerid'] = roomid + "_" + num
-                bot.send_message(message.chat.id, text_mess['enter_room_name'], parse_mode='html',
+                    num = str(SqlDB.player_number(player[message.chat.id]['roomid']) + 1)
+                player[message.chat.id]['playerid'] = player[message.chat.id]['roomid'] + "_" + num
+                SqlDB.add_new_player(player[message.chat.id]['playerid'], message.chat.id, player[message.chat.id]['roomid'])
+                bot.send_message(message.chat.id, text_mess['enter_room_name'].format(room_registration[message.chat.id]["name"]), parse_mode='html',
                                  reply_markup=telebot.types.ReplyKeyboardRemove())
                 bot.register_next_step_handler(message, player_name)
+            elif SqlDB.pair(message.text):
+                bot.send_message(message.chat.id, text_mess['enter_room_toss_up'], parse_mode='html',
+                                 reply_markup=main_markup())
+            elif SqlDB.player_number(message.text) == 99:
+                bot.send_message(message.chat.id, text_mess['enter_room_error_num'], parse_mode='html',
+                                 reply_markup=main_markup())
             else:
-                bot.send_message(message.chat.id, text_mess['enter_room_error'], parse_mode='html', reply_markup=main_markup())
+                bot.send_message(message.chat.id, text_mess['enter_room_error'], parse_mode='html',
+                                 reply_markup=main_markup())
 
 
 def player_name(message):
     if len(message.text) <= 64:
         player[message.chat.id]['name'] = message.text
-        room_info = SqlDB.room_info(player[message.chat.id]['roomid'])
-        if room_info[0][3]:
+        if room_registration[message.chat.id]["sending"]:
             player[message.chat.id]['post'] = True
             bot.send_message(message.chat.id, text_mess['enter_room_sending'])
             bot.register_next_step_handler(message, player_address)
@@ -380,25 +393,23 @@ def player_name(message):
 
 
 def player_sending(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text_mess['enter_room_name'], parse_mode='html',
                          reply_markup=telebot.types.ReplyKeyboardRemove())
         bot.register_next_step_handler(message, player_name)
     else:
-        if message.text == 'Почтой':
+        if message.text == 'Отправка почтой📦':
             player[message.chat.id]['post'] = True
             bot.send_message(message.chat.id, text_mess['enter_room_sending'], reply_markup=back_markup())
             bot.register_next_step_handler(message, player_address)
-        elif message.text == 'Лично':
+        elif message.text == 'Встреча лично🙋‍♂️':
             player[message.chat.id]['post'] = False
             player[message.chat.id]['address'] = None
-            SqlDB.add_new_player(player[message.chat.id]['playerid'], message.from_user.id,
-                                 player[message.chat.id]['roomid'], player[message.chat.id]['name'],
-                                 player[message.chat.id]['post'], player[message.chat.id]['address'])
+            SqlDB.add_new_player_update(player[message.chat.id]['playerid'], player[message.chat.id]['name'],
+                                        player[message.chat.id]['post'], player[message.chat.id]['address'])
             if not SqlDB.check_wish(message.from_user.id):
                 wish[message.chat.id]['check'] = "local"
-                bot.send_message(message.chat.id,
-                                 text_mess['loc_w_new'],
+                bot.send_message(message.chat.id, text_mess['loc_w_new'],
                                  reply_markup=telebot.types.ReplyKeyboardRemove())
                 bot.register_next_step_handler(message, wishlist)
             else:
@@ -414,7 +425,7 @@ def player_sending(message):
 
 
 def player_address(message):
-    if message.text == 'Назад':
+    if message.text == 'Назад↩️':
         room_info = SqlDB.room_info(player[message.chat.id]['roomid'])
         if room_info[0][3]:
             bot.send_message(message.chat.id, text_mess['enter_room_sending'])
@@ -425,16 +436,15 @@ def player_address(message):
             bot.register_next_step_handler(message, player_sending)
     else:
         player[message.chat.id]['address'] = message.text
-        SqlDB.add_new_player(player[message.chat.id]['playerid'], message.from_user.id,
-                             player[message.chat.id]['roomid'], player[message.chat.id]['name'],
-                             player[message.chat.id]['post'], player[message.chat.id]['address'])
+        SqlDB.add_new_player_update(player[message.chat.id]['playerid'], player[message.chat.id]['name'],
+                                    player[message.chat.id]['post'], player[message.chat.id]['address'])
         if not SqlDB.check_wish(message.from_user.id):
             wish[message.chat.id]['check'] = "local"
             bot.send_message(message.chat.id, text_mess['loc_w_new'],
                              reply_markup=telebot.types.ReplyKeyboardRemove())
             bot.register_next_step_handler(message, wishlist)
         else:
-            bot.send_message(message.chat.id, text_mess['loc_w_add'], parse_mode='html',
+            bot.send_message(message.chat.id, text_mess['loc_w_add'].format(room_registration[message.chat.id]["budget"]), parse_mode='html',
                              reply_markup=create_buttons(player[message.chat.id]["playerid"], "local:"))
 
 
@@ -481,7 +491,7 @@ def wish_menu(message):
 def handle_back_button(call):
     if call.data.split(":")[1] == 'wish':
         keyboard = create_buttons(player[call.message.chat.id]["playerid"], "wish:")
-        keyboard.add(types.InlineKeyboardButton(text='Назад',
+        keyboard.add(types.InlineKeyboardButton(text='Назад↩️',
                                                 callback_data='participant:' + player[call.message.chat.id][
                                                     "playerid"]))
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
@@ -510,7 +520,7 @@ def handle_delete_button(call):
                                       reply_markup=create_buttons(player[call.message.chat.id]["playerid"], "local:"))
         else:
             keyboard = create_buttons(player[call.message.chat.id]["playerid"], "wish:")
-            keyboard.add(types.InlineKeyboardButton(text='Назад', callback_data='participant:' + player[call.message.chat.id]["playerid"]))
+            keyboard.add(types.InlineKeyboardButton(text='Назад↩️', callback_data='participant:' + player[call.message.chat.id]["playerid"]))
             bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                                   text=text_mess['user_loc_w'],
                                   reply_markup=keyboard)
@@ -533,7 +543,7 @@ def handle_add_button(call):
     wish[call.message.chat.id]['check'] = call.data.split(":")[1]
     if wish[call.message.chat.id]['check'] == "wish":
         keyboard = create_buttons(player[call.message.chat.id]["playerid"], "local:")
-        keyboard.add(types.InlineKeyboardButton(text='Назад',
+        keyboard.add(types.InlineKeyboardButton(text='Назад↩️',
                                                 callback_data='wishlist'))
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                               text=text_mess['loc_w_new'],
@@ -553,10 +563,9 @@ def handle_edit_button(call):
     keyboard.add(types.InlineKeyboardButton(text="Подарок", callback_data='present'))
     keyboard.add(types.InlineKeyboardButton(text='Описание', callback_data='description'))
     keyboard.add(
-        types.InlineKeyboardButton(text='Назад', callback_data=call.data.split(":")[1] + ':' + str(wish_inf[call.message.chat.id]["id"])))
+        types.InlineKeyboardButton(text='Назад↩️', callback_data=call.data.split(":")[1] + ':' + str(wish_inf[call.message.chat.id]["id"])))
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                          text=text_mess['edit_select'],
-                          reply_markup=keyboard)
+                          text=text_mess['edit_select'], reply_markup=keyboard)
     bot.answer_callback_query(call.id)
 
 
@@ -593,7 +602,7 @@ def handle_global_button(call):
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(types.InlineKeyboardButton(text='Удалить', callback_data='delete:' + call.data.split(":")[0]))
     keyboard.add(types.InlineKeyboardButton(text='Изменить', callback_data='edit:' + call.data.split(":")[0]))
-    keyboard.add(types.InlineKeyboardButton(text='Назад', callback_data='back:' + call.data.split(":")[0]))
+    keyboard.add(types.InlineKeyboardButton(text='Назад↩️', callback_data='back:' + call.data.split(":")[0]))
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                           text=text_mess['wish'].format(wishlist_data[0][0], wishlist_data[0][1]),
                           reply_markup=keyboard)
@@ -623,7 +632,7 @@ def handle_add_present_button(call):
 @bot.callback_query_handler(func=lambda call: call.data == "quite_registration")
 def handle_organizer_button(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
-    bot.send_message(call.message.chat.id, text_mess['enter_room_done'], reply_markup=main_markup())
+    bot.send_message(call.message.chat.id, text_mess['enter_room_done_present'], reply_markup=main_markup())
     bot.answer_callback_query(call.id)
 
 
@@ -641,13 +650,13 @@ def handle_organizer_button(call):
     keyboard.add(types.InlineKeyboardButton(text='Изменить данные', callback_data='edit_room'))
     keyboard.add(types.InlineKeyboardButton(text='Удалить комнату', callback_data='delete_room'))
     if not SqlDB.pair(room_registration[call.message.chat.id]["id"]):
-        keyboard.add(types.InlineKeyboardButton(text='Удалить игрока', callback_data='delete_player'))
+        keyboard.add(types.InlineKeyboardButton(text='Список игроков (Удалить игрока)', callback_data='delete_player'))
     if SqlDB.pair(room_registration[call.message.chat.id]["id"]):
         keyboard.add(types.InlineKeyboardButton(text='Результат жеребьевки', callback_data='toss_up_result:room'))
     elif (SqlDB.player_number(room_registration[call.message.chat.id]["id"]) >= 3 and
           not SqlDB.pair(room_registration[call.message.chat.id]["id"])):
         keyboard.add(types.InlineKeyboardButton(text='Провести жеребьевку', callback_data='toss_up'))
-    keyboard.add(types.InlineKeyboardButton(text='Назад', callback_data='back_room'))
+    keyboard.add(types.InlineKeyboardButton(text='Назад↩️', callback_data='back_room'))
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                           text=text_mess['user_room_organizer'].format(room_registration[call.message.chat.id]['id'],
                                                                        room_registration[call.message.chat.id]['name'],
@@ -669,6 +678,10 @@ def handle_toss_up_button(call):
     keyboard.add(types.InlineKeyboardButton(text=text_mess['toss_up_result'], callback_data='toss_up_result:room'))
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                           text=text_mess['toss_up'], reply_markup=keyboard)
+    for player_id in SqlDB.room_players(room_registration[call.message.chat.id]["id"]):
+        bot.send_message(player_id[2], text_mess['toss_up_notification'].format(room_registration[call.message.chat.id]["name"], room_registration[call.message.chat.id]["name"]),
+                         parse_mode='html', reply_markup=main_markup())
+    bot.answer_callback_query(call.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.split(":")[0] == "toss_up_result")
@@ -685,7 +698,7 @@ def handle_toss_up_button(call):
         wish_text = ', '.join(wishlist)
 
         keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(text='Назад',
+        keyboard.add(types.InlineKeyboardButton(text='Назад↩️',
                                                 callback_data=f'participant:{player[call.message.chat.id]["playerid"]}'))
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                               text=text+"Вишлист: "+wish_text, parse_mode='html',
@@ -698,6 +711,7 @@ def handle_toss_up_button(call):
                                                 callback_data=f'organizer:{room_registration[call.message.chat.id]["id"]}'))
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                               text=f'Результат жеребьевки\n\n<tg-spoiler>{text}</tg-spoiler>', parse_mode='html', reply_markup=keyboard)
+        bot.answer_callback_query(call.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_room")
@@ -719,7 +733,7 @@ def handle_edit_room_button(call):
     keyboard.add(types.InlineKeyboardButton(text='Бюджет', callback_data='budget'))
     if not (room_inf[call.message.chat.id][3]):
         keyboard.add(types.InlineKeyboardButton(text='Место встречи', callback_data='meeting'))
-    keyboard.add(types.InlineKeyboardButton(text='Назад',
+    keyboard.add(types.InlineKeyboardButton(text='Назад↩️',
                                             callback_data=f'organizer:{room_registration[call.message.chat.id]["id"]}'))
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                           text=text_mess['edit_select'],
@@ -788,7 +802,7 @@ def handle_participant_button(call):
     else:
         keyboard.add(types.InlineKeyboardButton(text='Выйти из комнаты',
                                                 callback_data=f'player:{player[call.message.chat.id]["playerid"]}'))
-    keyboard.add(types.InlineKeyboardButton(text='Назад', callback_data='back_room'))
+    keyboard.add(types.InlineKeyboardButton(text='Назад↩️', callback_data='back_room'))
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                           text=text_mess['user_room_participant'].format(player[call.message.chat.id]['name'],
                                                                          room_registration[call.message.chat.id]['id'],
@@ -814,7 +828,7 @@ def handle_wishlist_button(call):
                                   reply_markup=create_buttons(player[call.message.chat.id]["playerid"], "local:"))
     else:
         keyboard = create_buttons(player[call.message.chat.id]["playerid"], "wish:")
-        keyboard.add(types.InlineKeyboardButton(text='Назад', callback_data='participant:' + player[call.message.chat.id]["playerid"]))
+        keyboard.add(types.InlineKeyboardButton(text='Назад↩️', callback_data='participant:' + player[call.message.chat.id]["playerid"]))
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                               text=text_mess['user_loc_w'],
                               reply_markup=keyboard)
@@ -829,7 +843,7 @@ def handle_edit_room_button(call):
         keyboard.add(types.InlineKeyboardButton(text='Способ получения подарка', callback_data='post'))
     if player_inf[call.message.chat.id][4]:
         keyboard.add(types.InlineKeyboardButton(text='Адрес', callback_data='address'))
-    keyboard.add(types.InlineKeyboardButton(text='Назад',
+    keyboard.add(types.InlineKeyboardButton(text='Назад↩️',
                                             callback_data=f'participant:{player[call.message.chat.id]["playerid"]}'))
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                           text=text_mess['edit_select'],
@@ -842,7 +856,7 @@ def wish_update(message):
     bot.send_message(message.chat.id, text_mess['edit_done'])
     if wish[message.chat.id]['check'] == "wish":
         keyboard = create_buttons(player[message.chat.id]["playerid"], "wish:")
-        keyboard.add(types.InlineKeyboardButton(text='Назад',
+        keyboard.add(types.InlineKeyboardButton(text='Назад↩️',
                                                 callback_data='participant:' + player[message.chat.id]["playerid"]))
         bot.send_message(message.chat.id, text_mess['user_loc_w'], reply_markup=keyboard)
     else:
@@ -854,7 +868,7 @@ def description_update(message):
     bot.send_message(message.chat.id, text_mess['edit_done'])
     if wish[message.chat.id]['check'] == "wish":
         keyboard = create_buttons(player[message.chat.id]["playerid"], "wish:")
-        keyboard.add(types.InlineKeyboardButton(text='Назад',
+        keyboard.add(types.InlineKeyboardButton(text='Назад↩️',
                                                 callback_data='participant:' + player[message.chat.id]["playerid"]))
         bot.send_message(message.chat.id, text_mess['user_loc_w'], reply_markup=keyboard)
     else:
@@ -892,13 +906,13 @@ def address_update(message):
 
 
 def post_update(message):
-    if message.text == 'Почтой':
+    if message.text == 'Отправка почтой📦':
         player[message.chat.id]['post'] = True
         SqlDB.edit("player", "post", "playerid", player[message.chat.id]["playerid"],
                    player[message.chat.id]['post'])
         bot.send_message(message.chat.id, text_mess['enter_room_sending'])
         bot.register_next_step_handler(message, address_update)
-    elif message.text == 'Лично':
+    elif message.text == 'Встреча лично🙋‍♂':
         player[message.chat.id]['post'] = False
         SqlDB.edit("player", "address", "playerid", player[message.chat.id]["playerid"], None)
         SqlDB.edit("player", "post", "playerid", player[message.chat.id]["playerid"],
@@ -906,7 +920,7 @@ def post_update(message):
         bot.send_message(message.chat.id, text_mess['edit_done'])
         bot.send_message(message.chat.id, text=text_mess['user_room'],
                          reply_markup=create_rooms_buttons(message.chat.id))
-    elif message.text == 'Назад':
+    elif message.text == 'Назад↩️':
         bot.send_message(message.chat.id, text=text_mess['user_room'],
                          reply_markup=create_rooms_buttons(message.chat.id))
     else:
@@ -916,21 +930,20 @@ def post_update(message):
 
 
 def budget_update(message):
-    budget[message.chat.id] = {}
-    budget[message.chat.id]['cur'] = message.text
+    val[message.chat.id]['cur'] = message.text
     bot.send_message(message.chat.id, text_mess['edit_room_bud'])
     bot.register_next_step_handler(message, budget_amount_update)
 
 
 def budget_amount_update(message):
     try:
-        budget[message.chat.id]['amount'] = float(message.text.replace(',', '.'))
-        if budget[message.chat.id]['amount'].is_integer():
-            budget[message.chat.id]['amount'] = int(budget[message.chat.id]['amount'])
-        if budget[message.chat.id]['amount'] <= 0:
+        val[message.chat.id]['amount'] = float(message.text.replace(',', '.'))
+        if val[message.chat.id]['amount'].is_integer():
+            val[message.chat.id]['amount'] = int(val[message.chat.id]['amount'])
+        if val[message.chat.id]['amount'] <= 0:
             raise Exception
         SqlDB.edit("room", "budget", "roomid", room_registration[message.chat.id]["id"],
-                        str(budget[message.chat.id]['amount']) + ' ' + budget[message.chat.id]['cur'])
+                        str(val[message.chat.id]['amount']) + ' ' + val[message.chat.id]['cur'])
         bot.send_message(message.chat.id, text_mess['edit_done'])
         bot.send_message(message.chat.id, text=text_mess['user_room'],
                          reply_markup=create_rooms_buttons(message.chat.id))
